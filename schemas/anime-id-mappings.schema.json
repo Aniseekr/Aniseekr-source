@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anime-id-mappings.schema.json",
+  "title": "Anime ID Mappings",
+  "description": "Outer-joined platform-ID lookup table derived from Fribb/anime-lists and manami-project/anime-offline-database. The top-level value is a plain array of sparse records; absent fields mean no upstream source provided that ID.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/MappingRecord"
+  },
+  "$defs": {
+    "MappingRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One anime entry keyed across platforms. Identifier columns are sparse; the join key during build is anidb_id.",
+      "properties": {
+        "mal_id": { "type": "integer", "description": "MyAnimeList numeric ID." },
+        "anilist_id": { "type": "integer", "description": "AniList numeric ID." },
+        "kitsu_id": { "type": "integer", "description": "Kitsu numeric ID." },
+        "bangumi_id": { "type": "integer", "description": "bangumi.tv subject ID. Not currently populated by either upstream source — populated only when an external feed contributes it." },
+        "shikimori_id": { "type": "integer", "description": "Shikimori numeric ID." },
+        "simkl_id": { "type": "integer", "description": "Simkl numeric ID." },
+        "annict_id": { "type": "integer", "description": "Annict numeric ID." },
+        "anidb_id": { "type": "integer", "description": "AniDB numeric ID. Used as the outer-join key during build." },
+        "thetvdb_id": { "type": "integer", "description": "TheTVDB numeric ID." },
+        "themoviedb_id": { "type": "integer", "description": "TheMovieDB numeric ID." },
+        "livechart_id": { "type": "integer", "description": "LiveChart numeric ID." },
+        "anime_planet_id": { "type": "string", "description": "anime-planet slug." },
+        "anisearch_id": { "type": "integer", "description": "AniSearch numeric ID." },
+        "notify_moe_id": { "type": "string", "description": "Notify.moe slug." }
+      }
+    }
+  }
+}

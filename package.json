@@ -1,9 +1,10 @@
 {
   "name": "aniseekr-source",
   "private": false,
-  "description": "Derived data sources for Aniseekr — anime ID mapping JSON, etc.",
+  "description": "Derived data sources for Aniseekr — anime ID mapping JSON, anitabi pilgrimage index, etc.",
   "license": "MIT",
   "scripts": {
-    "build:id-mapping": "bun scripts/build-id-mapping-source.ts"
+    "build:id-mapping": "bun scripts/build-id-mapping-source.ts",
+    "build:anitabi-index": "bun scripts/build-anitabi-index.ts"
   }
 }

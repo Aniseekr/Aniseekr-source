@@ -1,0 +1,93 @@
+name: Build Anitabi Index
+
+# Builds the anitabi-index JSON (every anime that anitabi.cn has pilgrimage
+# coordinates for) and publishes it via two parallel GitHub Releases:
+#
+#   1. `anitabi-index-YYYY-WW`  — weekly snapshot, kept for rollback / history.
+#                                 Latest 8 are retained; older ones are pruned.
+#   2. `anitabi-index`          — fixed alias tag, --clobber'd every run so the
+#                                 client URL stays stable across weeks.
+#
+# Primary build path uses an undocumented /bangumi bulk endpoint. When that
+# fails the script falls back to enumerating the documented /bangumi/{id}/lite
+# endpoint over an embedded seed list, so the workflow stays green either way.
+
+on:
+  schedule:
+    # Daily at 03:30 UTC — offset 30 minutes from build-id-mapping so the two
+    # jobs don't contend for the same Actions runner.
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build anitabi-index JSON
+        env:
+          # 8 minutes — generous for a streamed multi-MB bulk response from
+          # api.anitabi.cn. If even that's not enough the script falls back.
+          ANITABI_PRIMARY_TIMEOUT_MS: '480000'
+        run: bun scripts/build-anitabi-index.ts
+
+      - name: Verify output exists
+        run: |
+          test -s anitabi-index.json
+          ls -lh anitabi-index.json
+          echo "Entry count:"
+          node -e "const d=require('./anitabi-index.json'); console.log('  total:', d.entries.length, 'fallback:', d.fallbackUsed, 'source:', d.source);"
+
+      - name: Upload to GitHub Releases (weekly + alias)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          DATED_TAG="anitabi-index-$(date -u +%Y-%V)"
+          ALIAS_TAG="anitabi-index"
+
+          # 1. Weekly snapshot — created once per ISO week.
+          if ! gh release view "$DATED_TAG" >/dev/null 2>&1; then
+            gh release create "$DATED_TAG" \
+              --title "Anitabi Index ($DATED_TAG)" \
+              --notes "Weekly snapshot of anime with confirmed anitabi pilgrimage data. Auto-published by build-anitabi-index." \
+              --target main
+          fi
+          gh release upload "$DATED_TAG" anitabi-index.json --clobber
+
+          # 2. Fixed alias tag — overwritten every run so the client URL never
+          #    changes. To roll back, re-upload an older weekly asset here.
+          if ! gh release view "$ALIAS_TAG" >/dev/null 2>&1; then
+            gh release create "$ALIAS_TAG" \
+              --title "Anitabi Index (latest)" \
+              --notes "Always points to the most recent weekly build. Client URL is stable; see anitabi-index-YYYY-WW for the dated snapshot." \
+              --target main
+          fi
+          gh release upload "$ALIAS_TAG" anitabi-index.json --clobber
+
+      - name: Prune old weekly releases (keep last 8)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t OLD < <(
+            gh release list --limit 100 --json tagName --jq '.[].tagName' \
+              | grep -E '^anitabi-index-[0-9]{4}-[0-9]{2}$' \
+              | sort -r \
+              | tail -n +9
+          )
+          for TAG in "${OLD[@]}"; do
+            echo "Pruning $TAG"
+            gh release delete "$TAG" --yes --cleanup-tag
+          done

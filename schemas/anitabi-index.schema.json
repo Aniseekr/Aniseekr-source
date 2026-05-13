@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anitabi-index.schema.json",
+  "title": "Anitabi Index",
+  "description": "Index of anime that anitabi.cn has confirmed pilgrimage (聖地巡禮) data for, keyed by Bangumi subject ID. Built primarily from api.anitabi.cn/bangumi (a single bulk endpoint that mirrors anitabi.cn's own map data). Falls back to enumerating api.anitabi.cn/bangumi/{id}/lite over a small embedded seed when the bulk endpoint is unavailable.",
+  "type": "object",
+  "required": ["generatedAt", "source", "fallbackUsed", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema reference. Always set to this schema's $id."
+    },
+    "generatedAt": {
+      "type": "integer",
+      "description": "Unix epoch in milliseconds when this snapshot was produced."
+    },
+    "source": {
+      "type": "string",
+      "description": "Endpoint used to seed this build. Either 'https://api.anitabi.cn/bangumi' (primary) or 'fallback:lite-enumeration' (fallback path)."
+    },
+    "fallbackUsed": {
+      "type": "boolean",
+      "description": "True when the primary /bangumi endpoint failed and the script fell back to enumerating /bangumi/{id}/lite over an embedded seed list. False on the happy path."
+    },
+    "entries": {
+      "type": "array",
+      "description": "All anime subjects with valid pilgrimage coordinates. Sorted by id ASC for stable diffs.",
+      "items": { "$ref": "#/$defs/IndexEntry" }
+    }
+  },
+  "$defs": {
+    "IndexEntry": {
+      "type": "object",
+      "required": ["id", "title", "cn", "lat", "lng"],
+      "additionalProperties": false,
+      "description": "One anime with confirmed anitabi pilgrimage coordinates.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Bangumi subject ID. The primary key shared with the Bangumi.tv ecosystem."
+        },
+        "title": {
+          "type": "string",
+          "description": "Original-language title (typically Japanese). May be empty when anitabi has no native title."
+        },
+        "cn": {
+          "type": "string",
+          "description": "Chinese localized title. May be empty when anitabi has no Chinese translation."
+        },
+        "city": {
+          "type": "string",
+          "description": "Primary city of the pilgrimage locations. May be empty."
+        },
+        "cover": {
+          "type": "string",
+          "description": "Cover image URL (anitabi-hosted). May be empty."
+        },
+        "color": {
+          "type": "string",
+          "description": "Theme color derived from the cover. Hex string with leading '#'. May be empty."
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Default-center latitude, rounded to 6 decimal places."
+        },
+        "lng": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "description": "Default-center longitude, rounded to 6 decimal places."
+        },
+        "zoom": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Default map zoom level, rounded to 1 decimal place."
+        },
+        "pointsLength": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Marker count. Accurate when sourced from /lite (fallback path); set to 1 as a placeholder when sourced from the /bangumi bulk list (which doesn't expose marker counts)."
+        },
+        "episodes": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Episode count when known (parsed from anitabi 'ep' or '/lite'); null otherwise."
+        },
+        "startYear": {
+          "type": ["integer", "null"],
+          "minimum": 1900,
+          "maximum": 2100,
+          "description": "First-air year when known (parsed from 'info.放送开始' / 'release' / '/lite'); null otherwise."
+        },
+        "modified": {
+          "type": ["integer", "null"],
+          "description": "Upstream last-modified Unix epoch ms when known; null otherwise."
+        }
+      }
+    }
+  }
+}
