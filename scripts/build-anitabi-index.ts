@@ -47,8 +47,18 @@ const SCHEMA_URL =
 /** Categories that anitabi tags as anime/animation. Games/manga/novels excluded. */
 const ANIME_CATS = new Set(['TV', '剧场版', 'OVA', 'WEB']);
 
-/** Wall-clock seconds we'll spend on the bulk list before giving up. */
-const PRIMARY_TIMEOUT_MS = Number(process.env.ANITABI_PRIMARY_TIMEOUT_MS ?? '600000');
+/**
+ * Wall-clock ms we'll spend on the bulk list before giving up.
+ *
+ * api.anitabi.cn streams /bangumi server-side at a few hundred KB/s and
+ * the gzipped payload is single-digit MB. 25 minutes is generous but lets
+ * the workflow recover from one slow day rather than fall back to the
+ * 29-entry seed. Override via the `ANITABI_PRIMARY_TIMEOUT_MS` env var.
+ */
+const PRIMARY_TIMEOUT_MS = Number(process.env.ANITABI_PRIMARY_TIMEOUT_MS ?? '1500000');
+
+/** Identification header so anitabi can see who's pulling. */
+const USER_AGENT = 'Aniseekr-source/1.0 (+https://github.com/Aniseekr/Aniseekr-source)';
 
 /** Per-request delay for the fallback /lite enumeration. */
 const FALLBACK_DELAY_MS = Number(process.env.ANITABI_DELAY_MS ?? '120');
@@ -253,7 +263,14 @@ async function fetchPrimary(): Promise<AnitabiBulkEntry[]> {
     console.log(`[anitabi-index] GET ${BANGUMI_LIST_URL}`);
     const res = await fetch(BANGUMI_LIST_URL, {
       signal: ctrl.signal,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        // Bun honours this automatically but anitabi only sends gzip when
+        // the client opts in explicitly via Accept-Encoding. Without this
+        // we'd pull ~60 MB raw; with it, ~5-10 MB.
+        'Accept-Encoding': 'gzip',
+        'User-Agent': USER_AGENT,
+      },
     });
     if (!res.ok) {
       throw new Error(`Primary HTTP ${res.status} ${res.statusText}`);
@@ -275,7 +292,7 @@ async function fetchLite(id: number): Promise<AnitabiLiteEntry | null> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch(LITE_URL(id), {
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
       });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

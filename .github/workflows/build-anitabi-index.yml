@@ -36,9 +36,11 @@ jobs:
 
       - name: Build anitabi-index JSON
         env:
-          # 8 minutes — generous for a streamed multi-MB bulk response from
-          # api.anitabi.cn. If even that's not enough the script falls back.
-          ANITABI_PRIMARY_TIMEOUT_MS: '480000'
+          # 25 minutes — api.anitabi.cn /bangumi streams server-side at a
+          # few hundred KB/s. If even that's not enough the script falls
+          # back to /lite enumeration and the workflow still completes.
+          ANITABI_PRIMARY_TIMEOUT_MS: '1500000'
+        timeout-minutes: 30
         run: bun scripts/build-anitabi-index.ts
 
       - name: Verify output exists
