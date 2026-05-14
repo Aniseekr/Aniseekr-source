@@ -45,7 +45,16 @@ const SCHEMA_URL =
   'https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anitabi-cross-index.schema.json';
 
 const ANILIST_ENDPOINT = 'https://graphql.anilist.co';
-const ANILIST_DELAY_MS = Number(process.env.ANILIST_DELAY_MS ?? '1100');
+
+// Defaults to 1500 ms (40 req/min) — under the 90 req/min unauth ceiling but
+// leaves enough headroom to absorb a few retries without tripping a 429
+// burst. Override via the env var.
+const ANILIST_DELAY_MS = Number(process.env.ANILIST_DELAY_MS ?? '1500');
+
+// Max retries on HTTP 429 per seed before giving up and recording no_match.
+// AniList's rate-limit window is 60 s; we honour the Retry-After header when
+// present, falling back to 60 s otherwise.
+const ANILIST_RETRY_LIMIT = Number(process.env.ANILIST_RETRY_LIMIT ?? '3');
 
 const FORCE = process.argv.includes('--force');
 
@@ -121,7 +130,13 @@ const SEARCH_QUERY = `
   }
 `;
 
-async function searchAniList(keyword: string): Promise<AniListHit[]> {
+/**
+ * One AniList search call. Throws on HTTP error or GraphQL error. Caller
+ * (`searchAniListWithRetry`) handles the 429 backoff loop.
+ */
+async function searchAniListOnce(
+  keyword: string
+): Promise<{ hits: AniListHit[]; status: number; retryAfterSec: number | null }> {
   const res = await fetch(ANILIST_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -131,6 +146,12 @@ async function searchAniList(keyword: string): Promise<AniListHit[]> {
     },
     body: JSON.stringify({ query: SEARCH_QUERY, variables: { search: keyword } }),
   });
+
+  if (res.status === 429) {
+    const ra = res.headers.get('retry-after');
+    const retryAfterSec = ra ? Number(ra) : null;
+    return { hits: [], status: 429, retryAfterSec: Number.isFinite(retryAfterSec) ? retryAfterSec : null };
+  }
   if (!res.ok) {
     throw new Error(`AniList HTTP ${res.status}: ${await res.text().catch(() => '')}`);
   }
@@ -141,7 +162,25 @@ async function searchAniList(keyword: string): Promise<AniListHit[]> {
   if (json.errors) {
     throw new Error(`AniList GraphQL error: ${JSON.stringify(json.errors)}`);
   }
-  return json.data?.Page.media ?? [];
+  return { hits: json.data?.Page.media ?? [], status: 200, retryAfterSec: null };
+}
+
+/**
+ * Retry on 429 honouring the Retry-After header (or 60 s fallback). After
+ * `ANILIST_RETRY_LIMIT` consecutive 429s, throws — caller records no_match.
+ */
+async function searchAniList(keyword: string): Promise<AniListHit[]> {
+  for (let attempt = 1; attempt <= ANILIST_RETRY_LIMIT; attempt++) {
+    const result = await searchAniListOnce(keyword);
+    if (result.status !== 429) return result.hits;
+    if (attempt === ANILIST_RETRY_LIMIT) {
+      throw new Error(`AniList HTTP 429 after ${ANILIST_RETRY_LIMIT} attempts`);
+    }
+    const wait = (result.retryAfterSec ?? 60) * 1000;
+    process.stdout.write(`(429, sleeping ${wait / 1000}s) `);
+    await delay(wait);
+  }
+  throw new Error('unreachable');
 }
 
 // ---------- title normalization + disambiguation ----------
