@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "build:id-mapping": "bun scripts/build-id-mapping-source.ts",
-    "build:anitabi-index": "bun scripts/build-anitabi-index.ts"
+    "build:anitabi-index": "bun scripts/build-anitabi-index.ts",
+    "build:anitabi-cross-index": "bun scripts/build-anitabi-cross-index.ts"
   }
 }

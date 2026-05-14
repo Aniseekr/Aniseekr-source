@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anitabi-cross-index.schema.json",
+  "title": "Anitabi Cross-Index",
+  "description": "For every Bangumi subject in the anitabi-index L2 seed, the resolved AniList + MyAnimeList ids (or 'no_match'). Built by querying AniList GraphQL with the Bangumi Japanese title and disambiguating on episode count + start year.",
+  "type": "object",
+  "required": ["generatedAt", "source", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema reference. Always set to this schema's $id."
+    },
+    "generatedAt": {
+      "type": "integer",
+      "description": "Unix epoch ms when this build completed."
+    },
+    "source": {
+      "type": "string",
+      "description": "Identifier of the build script that produced this file."
+    },
+    "seedSize": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of L2 anitabi-index entries this build attempted to resolve."
+    },
+    "entries": {
+      "type": "array",
+      "description": "One entry per L2 seed. Sorted by bangumiId ASC for stable diffs.",
+      "items": { "$ref": "#/$defs/CrossIndexEntry" }
+    }
+  },
+  "$defs": {
+    "CrossIndexEntry": {
+      "type": "object",
+      "required": ["bangumiId", "anilistId", "malId", "matchType", "resolvedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "bangumiId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Bangumi subject ID (the L2 seed key)."
+        },
+        "anilistId": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Resolved AniList numeric ID, or null when no match."
+        },
+        "malId": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Resolved MyAnimeList numeric ID (from AniList's idMal), or null."
+        },
+        "anilistPopularity": {
+          "type": ["integer", "null"],
+          "description": "AniList's popularity score for the matched candidate."
+        },
+        "anilistEpisodes": {
+          "type": ["integer", "null"],
+          "description": "Episode count from AniList for the matched candidate."
+        },
+        "anilistStartYear": {
+          "type": ["integer", "null"],
+          "description": "First-air year from AniList for the matched candidate."
+        },
+        "titleJa": {
+          "type": "string",
+          "description": "Japanese (native) title from anitabi — used as the search key."
+        },
+        "titleCn": {
+          "type": "string",
+          "description": "Chinese title from anitabi (may be empty)."
+        },
+        "titleRomaji": {
+          "type": ["string", "null"],
+          "description": "Romaji title from AniList for the matched candidate."
+        },
+        "titleEnglish": {
+          "type": ["string", "null"],
+          "description": "English title from AniList for the matched candidate."
+        },
+        "matchType": {
+          "type": "string",
+          "enum": ["exact_native", "top1_fallback", "manual", "no_match"],
+          "description": "How the candidate was selected. 'exact_native' = AniList native title equals anitabi title. 'top1_fallback' = no exact-native match, top search hit picked. 'manual' = override. 'no_match' = AniList returned 0 candidates or HTTP error."
+        },
+        "matchNote": {
+          "type": ["string", "null"],
+          "description": "Free-text annotation explaining the match decision (e.g. 'unique_native', 'disambiguated_3_by_meta', 'http_error:...')."
+        },
+        "resolvedAt": {
+          "type": "integer",
+          "description": "Unix epoch ms when this row was last resolved (or last marked no_match)."
+        }
+      }
+    }
+  }
+}

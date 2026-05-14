@@ -2,5 +2,6 @@ node_modules/
 bun.lockb
 anime-id-mappings-merged.json
 anitabi-index.json
+anitabi-cross-index.json
 *.log
 .DS_Store

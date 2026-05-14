@@ -1,0 +1,96 @@
+name: Build Anitabi Cross-Index
+
+# Builds the L3 cross-index — every L2 anitabi seed → AniList + MAL ids —
+# and publishes it via two parallel GitHub Releases:
+#
+#   1. `anitabi-cross-index-YYYY-WW`  — weekly snapshot, kept for rollback.
+#                                       Latest 8 are retained; rest pruned.
+#   2. `anitabi-cross-index`          — fixed alias tag, --clobber'd every
+#                                       run so the client URL stays stable.
+#
+# AniList allows ~90 req/min unauthenticated; the script uses 1.1 s/req so a
+# full 781-row rebuild takes ~14 minutes. Subsequent runs are much faster
+# because the script reuses any non-no_match rows from the previous build.
+
+on:
+  schedule:
+    # Daily at 04:00 UTC — runs ~30 min after build-anitabi-index so it sees
+    # any L2 seeds added that morning.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force full rebuild (re-resolve every L2 seed via AniList)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build anitabi cross-index
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            bun scripts/build-anitabi-cross-index.ts --force
+          else
+            bun scripts/build-anitabi-cross-index.ts
+          fi
+
+      - name: Verify output exists
+        run: |
+          test -s anitabi-cross-index.json
+          ls -lh anitabi-cross-index.json
+          node -e "const d=require('./anitabi-cross-index.json'); console.log('  total:', d.entries.length, 'with anilist:', d.entries.filter(e=>e.anilistId).length, 'with mal:', d.entries.filter(e=>e.malId).length, 'no_match:', d.entries.filter(e=>e.matchType==='no_match').length);"
+
+      - name: Upload to GitHub Releases (weekly + alias)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          DATED_TAG="anitabi-cross-index-$(date -u +%Y-%V)"
+          ALIAS_TAG="anitabi-cross-index"
+
+          if ! gh release view "$DATED_TAG" >/dev/null 2>&1; then
+            gh release create "$DATED_TAG" \
+              --title "Anitabi Cross-Index ($DATED_TAG)" \
+              --notes "Weekly snapshot of L3 cross-index (Bangumi → AniList + MAL). Auto-published by build-anitabi-cross-index." \
+              --target main
+          fi
+          gh release upload "$DATED_TAG" anitabi-cross-index.json --clobber
+
+          if ! gh release view "$ALIAS_TAG" >/dev/null 2>&1; then
+            gh release create "$ALIAS_TAG" \
+              --title "Anitabi Cross-Index (latest)" \
+              --notes "Always points to the most recent weekly build. Client URL is stable; see anitabi-cross-index-YYYY-WW for the dated snapshot." \
+              --target main
+          fi
+          gh release upload "$ALIAS_TAG" anitabi-cross-index.json --clobber
+
+      - name: Prune old weekly releases (keep last 8)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t OLD < <(
+            gh release list --limit 100 --json tagName --jq '.[].tagName' \
+              | grep -E '^anitabi-cross-index-[0-9]{4}-[0-9]{2}$' \
+              | sort -r \
+              | tail -n +9
+          )
+          for TAG in "${OLD[@]}"; do
+            echo "Pruning $TAG"
+            gh release delete "$TAG" --yes --cleanup-tag
+          done

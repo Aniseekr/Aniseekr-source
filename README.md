@@ -42,19 +42,36 @@ Dated snapshots: `anitabi-index-YYYY-WW`. The 8 most recent are retained.
 
 The output's `source` and `fallbackUsed` fields tell consumers which path was taken.
 
+## Anitabi Cross-Index
+
+For every L2 anitabi-index entry, the resolved AniList + MyAnimeList ids — built by querying [AniList GraphQL](https://anilist.gitbook.io/anilist-apiv2-docs/) with the Bangumi Japanese title and disambiguating on episode count + first-air year.
+
+**Stable consumption URL**:
+
+```
+https://github.com/Aniseekr/Aniseekr-source/releases/download/anitabi-cross-index/anitabi-cross-index.json
+```
+
+Schema: [`schemas/anitabi-cross-index.schema.json`](./schemas/anitabi-cross-index.schema.json). Dated snapshots: `anitabi-cross-index-YYYY-WW`. The 8 most recent are retained.
+
+The build is incremental: each run reuses non-`no_match` rows from the previous release and only re-resolves new / previously-missed seeds. First cold run takes ~14 minutes for ~781 seeds; subsequent runs finish in seconds when L2 is unchanged.
+
 ## Rebuild cadence
 
-Both data sets rebuild daily via GitHub Actions:
+All three data sets rebuild daily via GitHub Actions:
 
 - `.github/workflows/build-id-mapping.yml` — 03:00 UTC
 - `.github/workflows/build-anitabi-index.yml` — 03:30 UTC
+- `.github/workflows/build-anitabi-cross-index.yml` — 04:00 UTC (after L2 publishes)
 
-Either can be re-run manually via `workflow_dispatch`.
+Any of them can be re-run manually via `workflow_dispatch`.
 
 ## Local builds
 
 ```bash
-bun scripts/build-id-mapping-source.ts        # writes anime-id-mappings-merged.json in CWD
-bun scripts/build-anitabi-index.ts            # writes anitabi-index.json in CWD
-ANITABI_FORCE_FALLBACK=1 bun scripts/build-anitabi-index.ts   # exercise fallback path
+bun scripts/build-id-mapping-source.ts             # writes anime-id-mappings-merged.json in CWD
+bun scripts/build-anitabi-index.ts                 # writes anitabi-index.json in CWD
+bun scripts/build-anitabi-cross-index.ts           # writes anitabi-cross-index.json in CWD
+ANITABI_FORCE_FALLBACK=1 bun scripts/build-anitabi-index.ts   # exercise L2 fallback path
+bun scripts/build-anitabi-cross-index.ts --force              # force full L3 re-resolution
 ```
