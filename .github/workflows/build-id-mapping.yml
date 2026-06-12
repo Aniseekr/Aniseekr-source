@@ -34,7 +34,14 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Run unit tests
+        run: bun test
+
       - name: Build merged mapping JSON
+        env:
+          # For the bangumi/Archive release-asset listing (avoids the 60/h
+          # unauthenticated API rate limit shared across runner IPs).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun scripts/build-id-mapping-source.ts
 
       - name: Verify output exists
