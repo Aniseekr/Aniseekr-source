@@ -1,0 +1,90 @@
+import { describe, expect, it } from 'bun:test';
+import { matchManamiToBangumi, type ManamiMatchInput } from '../scripts/lib/bangumi-match';
+import type { BangumiAnimeSubject } from '../scripts/lib/bangumi-dump';
+
+const subj = (
+  s: Partial<BangumiAnimeSubject> & { id: number; name: string }
+): BangumiAnimeSubject => ({
+  nameCn: null,
+  year: null,
+  platform: null,
+  ...s,
+});
+const entry = (e: Partial<ManamiMatchInput> & { title: string }): ManamiMatchInput => ({
+  synonyms: [],
+  year: null,
+  type: null,
+  ...e,
+});
+
+describe('matchManamiToBangumi', () => {
+  it('matches a unique native-title hit via synonyms', () => {
+    const { matches } = matchManamiToBangumi(
+      [entry({ title: 'Attack on Titan', synonyms: ['進撃の巨人'], year: 2013 })],
+      [subj({ id: 23686, name: '進撃の巨人', year: 2013, platform: 1 })]
+    );
+    expect(matches.get(0)).toBe(23686);
+  });
+
+  it('disambiguates same-name entries by year ±1', () => {
+    const subjects = [
+      subj({ id: 10, name: 'ハンター×ハンター', year: 1999, platform: 1 }),
+      subj({ id: 11, name: 'ハンター×ハンター', year: 2011, platform: 1 }),
+    ];
+    const { matches } = matchManamiToBangumi(
+      [
+        entry({
+          title: 'Hunter x Hunter (2011)',
+          synonyms: ['ハンター×ハンター'],
+          year: 2011,
+          type: 'TV',
+        }),
+      ],
+      subjects
+    );
+    expect(matches.get(0)).toBe(11);
+  });
+
+  it('disambiguates TV vs movie by type when years tie', () => {
+    const subjects = [
+      subj({ id: 20, name: '君の名は。', year: 2016, platform: 3 }),
+      subj({ id: 21, name: '君の名は。', year: 2016, platform: 1 }),
+    ];
+    const { matches } = matchManamiToBangumi(
+      [entry({ title: 'Kimi no Na wa.', synonyms: ['君の名は。'], year: 2016, type: 'MOVIE' })],
+      subjects
+    );
+    expect(matches.get(0)).toBe(20);
+  });
+
+  it('skips when ambiguity survives the filters', () => {
+    const subjects = [
+      subj({ id: 30, name: '同名', year: 2020, platform: 1 }),
+      subj({ id: 31, name: '同名', year: 2020, platform: 1 }),
+    ];
+    const { matches, stats } = matchManamiToBangumi(
+      [entry({ title: '同名', year: 2020, type: 'TV' })],
+      subjects
+    );
+    expect(matches.size).toBe(0);
+    expect(stats.ambiguous).toBe(1);
+  });
+
+  it('matches through name_cn too', () => {
+    const { matches } = matchManamiToBangumi(
+      [entry({ title: '葬送的芙莉蓮' })],
+      [subj({ id: 40, name: '葬送のフリーレン', nameCn: '葬送的芙莉蓮' })]
+    );
+    expect(matches.get(0)).toBe(40);
+  });
+
+  it('drops a bangumi id claimed by two different entries', () => {
+    const subjects = [subj({ id: 50, name: 'かぶり' })];
+    const { matches, stats } = matchManamiToBangumi(
+      [entry({ title: 'かぶり' }), entry({ title: 'カブリ', synonyms: ['かぶり'] })],
+      subjects
+    );
+    expect(matches.size).toBe(0);
+    expect(stats.collisionsDropped).toBe(2);
+  });
+});
