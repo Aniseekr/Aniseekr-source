@@ -90,7 +90,27 @@ export async function downloadLatestDump(destPath: string): Promise<string> {
     signal: AbortSignal.timeout(20 * 60 * 1000),
   });
   if (!dl.ok || !dl.body) throw new Error(`Dump download failed: ${dl.status}`);
-  await Bun.write(destPath, dl);
+
+  // Explicit chunk pump instead of Bun.write(path, Response): on CI the
+  // latter let the process exit 0 mid-download with no file written
+  // (run 27429372182) — the local dev loop always used BANGUMI_DUMP_PATH,
+  // so this network path must stay deliberately boring.
+  const writer = Bun.file(destPath).writer();
+  let written = 0;
+  for await (const chunk of dl.body) {
+    writer.write(chunk);
+    written += chunk.byteLength;
+  }
+  await writer.end();
+
+  // The dump has been well above this for years; a small file means a
+  // truncated or HTML-error download that line parsing would silently
+  // mis-read as "almost no anime subjects".
+  const MIN_DUMP_BYTES = 100 * 1024 * 1024;
+  if (written < MIN_DUMP_BYTES) {
+    throw new Error(`Dump download truncated: ${written} bytes (< ${MIN_DUMP_BYTES})`);
+  }
+  console.log(`[bangumi-dump] downloaded ${(written / 1e6).toFixed(0)} MB`);
   return destPath;
 }
 
