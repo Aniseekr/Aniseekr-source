@@ -13,20 +13,66 @@
       "additionalProperties": false,
       "description": "One anime entry keyed across platforms. Identifier columns are sparse; the join key during build is anidb_id.",
       "properties": {
-        "mal_id": { "type": "integer", "description": "MyAnimeList numeric ID." },
-        "anilist_id": { "type": "integer", "description": "AniList numeric ID." },
-        "kitsu_id": { "type": "integer", "description": "Kitsu numeric ID." },
-        "bangumi_id": { "type": "integer", "description": "bangumi.tv subject ID. Not currently populated by either upstream source — populated only when an external feed contributes it." },
-        "shikimori_id": { "type": "integer", "description": "Shikimori numeric ID." },
-        "simkl_id": { "type": "integer", "description": "Simkl numeric ID." },
-        "annict_id": { "type": "integer", "description": "Annict numeric ID." },
-        "anidb_id": { "type": "integer", "description": "AniDB numeric ID. Used as the outer-join key during build." },
-        "thetvdb_id": { "type": "integer", "description": "TheTVDB numeric ID." },
-        "themoviedb_id": { "type": "integer", "description": "TheMovieDB numeric ID." },
-        "livechart_id": { "type": "integer", "description": "LiveChart numeric ID." },
-        "anime_planet_id": { "type": "string", "description": "anime-planet slug." },
-        "anisearch_id": { "type": "integer", "description": "AniSearch numeric ID." },
-        "notify_moe_id": { "type": "string", "description": "Notify.moe slug." }
+        "mal_id": {
+          "type": "integer",
+          "description": "MyAnimeList numeric ID."
+        },
+        "anilist_id": {
+          "type": "integer",
+          "description": "AniList numeric ID."
+        },
+        "kitsu_id": {
+          "type": "integer",
+          "description": "Kitsu numeric ID."
+        },
+        "bangumi_id": {
+          "type": "integer",
+          "description": "bangumi.tv subject ID. Contributed by the Bangumi Archive title match and the anitabi-cross-index seeds (neither Fribb nor manami carries it)."
+        },
+        "shikimori_id": {
+          "type": "integer",
+          "description": "Shikimori numeric ID."
+        },
+        "simkl_id": {
+          "type": "integer",
+          "description": "Simkl numeric ID."
+        },
+        "annict_id": {
+          "type": "integer",
+          "description": "Annict numeric ID."
+        },
+        "anidb_id": {
+          "type": "integer",
+          "description": "AniDB numeric ID. Used as the outer-join key during build."
+        },
+        "thetvdb_id": {
+          "type": "integer",
+          "description": "TheTVDB numeric ID."
+        },
+        "themoviedb_id": {
+          "type": "integer",
+          "description": "TheMovieDB numeric ID."
+        },
+        "livechart_id": {
+          "type": "integer",
+          "description": "LiveChart numeric ID."
+        },
+        "anime_planet_id": {
+          "type": "string",
+          "description": "anime-planet slug."
+        },
+        "anisearch_id": {
+          "type": "integer",
+          "description": "AniSearch numeric ID."
+        },
+        "notify_moe_id": {
+          "type": "string",
+          "description": "Notify.moe slug."
+        },
+        "name_cn": {
+          "type": "string",
+          "description": "Official Chinese title from the Bangumi Archive dump (subject.name_cn); cross-index titleCn as fallback."
+        }
       }
     }
   }

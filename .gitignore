@@ -5,3 +5,5 @@ anitabi-index.json
 anitabi-cross-index.json
 *.log
 .DS_Store
+bun.lock
+bangumi-dump.zip

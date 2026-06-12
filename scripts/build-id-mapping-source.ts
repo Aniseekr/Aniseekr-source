@@ -2,19 +2,32 @@
 /**
  * Build merged anime ID mapping source.
  *
- * Fetches Fribb (anime-list-mini.json) + manami-project (anime-offline-database-minified.json),
- * regex-extracts platform IDs from manami's sources[] URLs, and outer-joins both
- * on AniDB ID. Fribb values win where they exist; manami fills the gaps —
- * especially Bangumi, which Fribb doesn't carry.
+ * Sources, in join order:
+ *   1. Fribb (anime-list-mini.json) × manami-project (minified) — outer-join
+ *      on AniDB ID; Fribb values win where both define a field.
+ *   2. Bangumi Archive weekly dump (subject.jsonlines, type=2) — offline
+ *      title match (normalized native/Chinese name, ±1 year, platform/type
+ *      compat; ambiguity → skip) contributes `bangumi_id` + `name_cn`.
+ *      NOTE: neither Fribb nor manami carries Bangumi or Shikimori IDs — the
+ *      historical sources[] regexes for them matched nothing, ever.
+ *   3. anitabi-cross-index (this repo's release; AniList-verified
+ *      bangumiId↔anilist/mal pairs) — authoritative seeds, win over a
+ *      disagreeing title match.
+ *
+ * A coverage gate fails the build when bangumi_id / name_cn coverage drops
+ * below the calibrated floors — a silent return to 0% must never ship again.
  *
  * Output: anime-id-mappings-merged.json (minified) in CWD.
  *
  * Run locally:   bun scripts/build-id-mapping-source.ts
+ *                BANGUMI_DUMP_PATH=/tmp/dump.zip bun scripts/build-id-mapping-source.ts
  * Run in CI:     see .github/workflows/build-id-mapping.yml
  */
 
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { downloadLatestDump, loadAnimeSubjects } from './lib/bangumi-dump';
+import { matchManamiToBangumi, type ManamiMatchInput } from './lib/bangumi-match';
 
 const FRIBB_URL =
   'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json';
@@ -24,7 +37,16 @@ const FRIBB_URL =
 const MANAMI_URL =
   'https://github.com/manami-project/anime-offline-database/releases/latest/download/anime-offline-database-minified.json';
 
+const CROSS_INDEX_URL =
+  'https://github.com/Aniseekr/Aniseekr-source/releases/download/anitabi-cross-index/anitabi-cross-index.json';
+
 const OUTPUT = 'anime-id-mappings-merged.json';
+
+// Coverage floors among rows that carry an anilist_id. Calibrated against the
+// 2026-06-09 Archive dump; their job is to catch a silent regression toward
+// 0% (the pre-2026-06 state), not to enforce a precise number.
+const BANGUMI_FLOOR_PCT = 20;
+const NAME_CN_FLOOR_PCT = 15;
 
 // All platform-ID columns we care about. anidb_id is the join key but is
 // also kept on the merged record for future re-joins.
@@ -47,7 +69,10 @@ const ID_COLUMNS = [
 
 type IdColumn = (typeof ID_COLUMNS)[number];
 
-type MergedRecord = Partial<Record<IdColumn, number | string>>;
+type MergedRecord = Partial<Record<IdColumn, number | string>> & { name_cn?: string };
+
+/** Fields propagated by mergeInto — the ID columns plus the Chinese title. */
+const MERGE_FIELDS = [...ID_COLUMNS, 'name_cn'] as const;
 
 interface FribbEntry {
   mal_id?: number;
@@ -69,6 +94,16 @@ interface FribbEntry {
 interface ManamiEntry {
   sources?: string[];
   title?: string;
+  synonyms?: string[];
+  animeSeason?: { season?: string; year?: number };
+  type?: string;
+}
+
+interface CrossIndexEntry {
+  bangumiId: number;
+  anilistId: number | null;
+  malId: number | null;
+  titleCn: string;
 }
 
 interface ManamiFile {
@@ -133,9 +168,9 @@ function normalizeFribbEntry(e: FribbEntry): MergedRecord {
 }
 
 function mergeInto(dst: MergedRecord, src: MergedRecord): void {
-  for (const col of ID_COLUMNS) {
+  for (const col of MERGE_FIELDS) {
     if (dst[col] === undefined && src[col] !== undefined) {
-      dst[col] = src[col];
+      (dst as Record<string, number | string>)[col] = src[col] as number | string;
     }
   }
 }
@@ -166,7 +201,7 @@ function dedupeByPriority(records: MergedRecord[]): MergedRecord[] {
 function reportCoverage(records: MergedRecord[]): void {
   const total = records.length;
   console.log(`\n=== Coverage report (${total} records) ===`);
-  for (const col of ID_COLUMNS) {
+  for (const col of MERGE_FIELDS) {
     let present = 0;
     for (const r of records) {
       if (r[col] !== undefined && r[col] !== null) present++;
@@ -176,22 +211,119 @@ function reportCoverage(records: MergedRecord[]): void {
   }
 }
 
+/**
+ * Coverage is measured against rows that carry an anilist_id — those are the
+ * rows the app's AniList-backed screens actually resolve titles for.
+ * Below-floor coverage refuses to publish: shipping a dataset that silently
+ * regressed to no Chinese titles is exactly the failure this gate exists for.
+ */
+function enforceCoverageGate(records: MergedRecord[]): void {
+  const withAnilist = records.filter((r) => r.anilist_id !== undefined);
+  const pct = (n: number) => (withAnilist.length > 0 ? (n / withAnilist.length) * 100 : 0);
+  const bangumiPct = pct(withAnilist.filter((r) => r.bangumi_id !== undefined).length);
+  const nameCnPct = pct(withAnilist.filter((r) => r.name_cn !== undefined).length);
+  console.log(
+    `\n[gate] of ${withAnilist.length} anilist rows: bangumi_id ${bangumiPct.toFixed(1)}% ` +
+      `(floor ${BANGUMI_FLOOR_PCT}%), name_cn ${nameCnPct.toFixed(1)}% (floor ${NAME_CN_FLOOR_PCT}%)`
+  );
+  if (bangumiPct < BANGUMI_FLOOR_PCT || nameCnPct < NAME_CN_FLOOR_PCT) {
+    console.error('[gate] FAIL — bangumi/name_cn coverage regressed; refusing to publish.');
+    process.exit(1);
+  }
+}
+
+/** Fetch the cross-index seeds; tolerate failure — it's an enhancement layer. */
+async function fetchCrossIndexSeeds(): Promise<CrossIndexEntry[]> {
+  try {
+    const file = await fetchJson<{ entries?: CrossIndexEntry[] }>(CROSS_INDEX_URL);
+    return (file.entries ?? []).filter(
+      (e) => typeof e.bangumiId === 'number' && e.bangumiId > 0
+    );
+  } catch (err) {
+    console.warn('[build-id-mapping] cross-index unavailable, continuing without seeds:', err);
+    return [];
+  }
+}
+
 async function main() {
-  const [fribbRaw, manamiRaw] = await Promise.all([
+  const [fribbRaw, manamiRaw, crossSeeds] = await Promise.all([
     fetchJson<FribbEntry[]>(FRIBB_URL),
     fetchJson<ManamiFile>(MANAMI_URL),
+    fetchCrossIndexSeeds(),
   ]);
 
   console.log(`[build-id-mapping] Fribb entries: ${fribbRaw.length}`);
   console.log(`[build-id-mapping] Manami entries: ${manamiRaw.data?.length ?? 0}`);
+  console.log(`[build-id-mapping] Cross-index seeds: ${crossSeeds.length}`);
+
+  const dumpPath = await downloadLatestDump(resolve(process.cwd(), 'bangumi-dump.zip'));
+  const subjects = await loadAnimeSubjects(dumpPath);
+  const subjectById = new Map(subjects.map((s) => [s.id, s]));
 
   const fribbRecords = fribbRaw.map(normalizeFribbEntry);
-  const manamiRecords = (manamiRaw.data ?? []).map(extractIdsFromManami);
+  const manamiEntries = manamiRaw.data ?? [];
+  const manamiRecords = manamiEntries.map(extractIdsFromManami);
+
+  // Title-match each manami entry against the Archive BEFORE the merge, while
+  // titles/synonyms are still attached.
+  const matchInputs: ManamiMatchInput[] = manamiEntries.map((e) => ({
+    title: e.title ?? '',
+    synonyms: e.synonyms ?? [],
+    year: typeof e.animeSeason?.year === 'number' ? e.animeSeason.year : null,
+    type: e.type ?? null,
+  }));
+  const { matches, stats } = matchManamiToBangumi(matchInputs, subjects);
+  for (const [i, bangumiId] of matches) {
+    const record = manamiRecords[i];
+    record.bangumi_id = bangumiId;
+    const nameCn = subjectById.get(bangumiId)?.nameCn;
+    if (nameCn) record.name_cn = nameCn;
+  }
+  console.log(
+    `[build-id-mapping] Archive title match: ${stats.matched} matched, ` +
+      `${stats.ambiguous} ambiguous, ${stats.noCandidate} no-candidate, ` +
+      `${stats.collisionsDropped} collision-dropped`
+  );
 
   // Order matters: Fribb first → its values win when both sides define a field.
   const merged = dedupeByPriority([...fribbRecords, ...manamiRecords]);
 
+  // Cross-index seeds are AniList-verified pairs — they win over a
+  // disagreeing title match and reach Fribb-only records the matcher can't.
+  const byAnilist = new Map<number, CrossIndexEntry>();
+  const byMal = new Map<number, CrossIndexEntry>();
+  for (const e of crossSeeds) {
+    if (typeof e.anilistId === 'number') byAnilist.set(e.anilistId, e);
+    if (typeof e.malId === 'number') byMal.set(e.malId, e);
+  }
+  let seeded = 0;
+  let disagreements = 0;
+  for (const record of merged) {
+    const seed =
+      (typeof record.anilist_id === 'number' ? byAnilist.get(record.anilist_id) : undefined) ??
+      (typeof record.mal_id === 'number' ? byMal.get(record.mal_id) : undefined);
+    if (seed) {
+      if (record.bangumi_id !== undefined && record.bangumi_id !== seed.bangumiId) {
+        disagreements += 1;
+        delete record.name_cn; // judged for the wrong subject
+      }
+      if (record.bangumi_id !== seed.bangumiId) seeded += 1;
+      record.bangumi_id = seed.bangumiId;
+    }
+    if (record.bangumi_id !== undefined && record.name_cn === undefined) {
+      const fromArchive = subjectById.get(record.bangumi_id as number)?.nameCn;
+      const fromSeed = seed?.titleCn?.trim();
+      const nameCn = fromArchive ?? (fromSeed && fromSeed.length > 0 ? fromSeed : undefined);
+      if (nameCn) record.name_cn = nameCn;
+    }
+  }
+  console.log(
+    `[build-id-mapping] Cross-index: ${seeded} records seeded/corrected, ` +
+      `${disagreements} title-match disagreements overridden`
+  );
+
   reportCoverage(merged);
+  enforceCoverageGate(merged);
 
   const outPath = resolve(process.cwd(), OUTPUT);
   writeFileSync(outPath, JSON.stringify(merged));
