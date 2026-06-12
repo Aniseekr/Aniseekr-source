@@ -44,7 +44,10 @@ export interface ManamiMatchInput {
 
 export interface MatchStats {
   matched: number;
+  /** >1 candidate survived all filters — genuinely ambiguous, skipped. */
   ambiguous: number;
+  /** The year gate eliminated every candidate — wrong-era hits, skipped. */
+  filteredOut: number;
   noCandidate: number;
   collisionsArbitrated: number;
   collisionsDropped: number;
@@ -82,6 +85,7 @@ export function matchManamiToBangumi(
   const stats: MatchStats = {
     matched: 0,
     ambiguous: 0,
+    filteredOut: 0,
     noCandidate: 0,
     collisionsArbitrated: 0,
     collisionsDropped: 0,
@@ -110,6 +114,11 @@ export function matchManamiToBangumi(
     if (entry.year !== null) {
       remaining = remaining.filter((s) => s.year === null || Math.abs(s.year - entry.year!) <= 1);
     }
+    // The platform gate is disambiguation-only: a sole year-gate survivor is
+    // accepted even when its platform disagrees with the manami type. Title
+    // equality + matching era for the only Bangumi entry of that name is the
+    // stronger signal (type labels drift between databases), and the
+    // cross-index seed pass corrects any known mismatch downstream.
     const platforms = entry.type ? TYPE_TO_PLATFORMS[entry.type] : undefined;
     if (remaining.length > 1 && platforms) {
       remaining = remaining.filter((s) => s.platform === null || platforms.has(s.platform));
@@ -117,6 +126,8 @@ export function matchManamiToBangumi(
 
     if (remaining.length === 1) {
       provisional.set(i, remaining[0].id);
+    } else if (remaining.length === 0) {
+      stats.filteredOut += 1;
     } else {
       stats.ambiguous += 1;
     }

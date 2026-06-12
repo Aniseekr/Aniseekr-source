@@ -285,7 +285,8 @@ async function main() {
   }
   console.log(
     `[build-id-mapping] Archive title match: ${stats.matched} matched, ` +
-      `${stats.ambiguous} ambiguous, ${stats.noCandidate} no-candidate, ` +
+      `${stats.ambiguous} ambiguous, ${stats.filteredOut} wrong-era, ` +
+      `${stats.noCandidate} no-candidate, ${stats.collisionsArbitrated} arbitrated, ` +
       `${stats.collisionsDropped} collision-dropped`
   );
 

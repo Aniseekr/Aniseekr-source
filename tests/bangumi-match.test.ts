@@ -70,6 +70,28 @@ describe('matchManamiToBangumi', () => {
     expect(stats.ambiguous).toBe(1);
   });
 
+  it('accepts a sole year-gate survivor even when the type disagrees (documented tradeoff)', () => {
+    // Platform gate is disambiguation-only: type labels drift between
+    // databases, so the only same-era Bangumi entry of that name wins.
+    const subjects = [subj({ id: 60, name: '唯一の作品', year: 2023, platform: 3 })];
+    const { matches } = matchManamiToBangumi(
+      [entry({ title: '唯一の作品', year: 2023, type: 'ONA' })],
+      subjects
+    );
+    expect(matches.get(0)).toBe(60);
+  });
+
+  it('counts wrong-era eliminations as filteredOut, not ambiguous', () => {
+    const subjects = [subj({ id: 61, name: 'リメイク元', year: 1985, platform: 1 })];
+    const { matches, stats } = matchManamiToBangumi(
+      [entry({ title: 'リメイク元', year: 2024, type: 'TV' })],
+      subjects
+    );
+    expect(matches.size).toBe(0);
+    expect(stats.filteredOut).toBe(1);
+    expect(stats.ambiguous).toBe(0);
+  });
+
   it('matches through name_cn too', () => {
     const { matches } = matchManamiToBangumi(
       [entry({ title: '葬送的芙莉蓮' })],

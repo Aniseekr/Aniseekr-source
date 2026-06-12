@@ -84,7 +84,11 @@ export async function downloadLatestDump(destPath: string): Promise<string> {
   if (!asset) throw new Error('No dump-*.zip asset found in bangumi/Archive release');
 
   console.log(`[bangumi-dump] downloading ${asset.name}…`);
-  const dl = await fetch(asset.browser_download_url);
+  // ~400 MB from GitHub Releases normally lands in <2 min on CI; the timeout
+  // exists to surface a hung connection in minutes, not the job's 6-hour cap.
+  const dl = await fetch(asset.browser_download_url, {
+    signal: AbortSignal.timeout(20 * 60 * 1000),
+  });
   if (!dl.ok || !dl.body) throw new Error(`Dump download failed: ${dl.status}`);
   await Bun.write(destPath, dl);
   return destPath;
