@@ -87,4 +87,62 @@ describe('matchManamiToBangumi', () => {
     expect(matches.size).toBe(0);
     expect(stats.collisionsDropped).toBe(2);
   });
+
+  it('arbitrates a collision toward strict type/platform agreement (TV beats SPECIAL)', () => {
+    // FMA:B pattern: the Specials entry shares the base native title via
+    // synonyms and the same air year — the TV entry must win the TV subject.
+    const subjects = [
+      subj({ id: 1428, name: '鋼の錬金術師 FULLMETAL ALCHEMIST', year: 2009, platform: 1 }),
+    ];
+    const { matches, stats } = matchManamiToBangumi(
+      [
+        entry({
+          title: 'Fullmetal Alchemist: Brotherhood',
+          synonyms: ['鋼の錬金術師 FULLMETAL ALCHEMIST'],
+          year: 2009,
+          type: 'TV',
+        }),
+        entry({
+          title: 'Fullmetal Alchemist: Brotherhood Specials',
+          synonyms: ['鋼の錬金術師 FULLMETAL ALCHEMIST'],
+          year: 2009,
+          type: 'SPECIAL',
+        }),
+      ],
+      subjects
+    );
+    expect(matches.get(0)).toBe(1428);
+    expect(matches.has(1)).toBe(false);
+    expect(stats.collisionsArbitrated).toBe(1);
+  });
+
+  it('awards upstream-duplicate claimants (same title+year+type) to the richest record', () => {
+    // manami carries occasional unmerged duplicates (e.g. two "One Piece"
+    // TV/1999 entries, one without anilist/mal sources). Identical
+    // title+year+type = the same work — not an ambiguity.
+    const subjects = [subj({ id: 975, name: 'ONE PIECE', year: 1999, platform: 1 })];
+    const { matches, stats } = matchManamiToBangumi(
+      [
+        entry({ title: 'One Piece', synonyms: ['ONE PIECE'], year: 1999, type: 'TV', weight: 6 }),
+        entry({ title: 'One Piece', synonyms: ['ONE PIECE'], year: 1999, type: 'TV', weight: 1 }),
+      ],
+      subjects
+    );
+    expect(matches.get(0)).toBe(975);
+    expect(matches.has(1)).toBe(false);
+    expect(stats.collisionsArbitrated).toBe(1);
+  });
+
+  it('arbitrates a collision toward the exact-year claimant', () => {
+    const subjects = [subj({ id: 975, name: 'ONE PIECE', year: 1999, platform: 1 })];
+    const { matches } = matchManamiToBangumi(
+      [
+        entry({ title: 'One Piece', synonyms: ['ONE PIECE'], year: 1999, type: 'TV' }),
+        entry({ title: 'One Piece Special', synonyms: ['ONE PIECE'], year: 2005, type: 'TV' }),
+      ],
+      subjects
+    );
+    expect(matches.get(0)).toBe(975);
+    expect(matches.has(1)).toBe(false);
+  });
 });

@@ -43,10 +43,11 @@ const CROSS_INDEX_URL =
 const OUTPUT = 'anime-id-mappings-merged.json';
 
 // Coverage floors among rows that carry an anilist_id. Calibrated against the
-// 2026-06-09 Archive dump; their job is to catch a silent regression toward
-// 0% (the pre-2026-06 state), not to enforce a precise number.
+// 2026-06-09 Archive dump (measured: bangumi_id 41.2%, name_cn 34.6%) — set
+// to roughly half the measured value. Their job is to catch a silent
+// regression toward 0% (the pre-2026-06 state), not to enforce precision.
 const BANGUMI_FLOOR_PCT = 20;
-const NAME_CN_FLOOR_PCT = 15;
+const NAME_CN_FLOOR_PCT = 17;
 
 // All platform-ID columns we care about. anidb_id is the join key but is
 // also kept on the merged record for future re-joins.
@@ -266,11 +267,14 @@ async function main() {
 
   // Title-match each manami entry against the Archive BEFORE the merge, while
   // titles/synonyms are still attached.
-  const matchInputs: ManamiMatchInput[] = manamiEntries.map((e) => ({
+  const matchInputs: ManamiMatchInput[] = manamiEntries.map((e, i) => ({
     title: e.title ?? '',
     synonyms: e.synonyms ?? [],
     year: typeof e.animeSeason?.year === 'number' ? e.animeSeason.year : null,
     type: e.type ?? null,
+    // Richness for upstream-duplicate arbitration: how many platform IDs the
+    // sources[] regexes extracted for this entry.
+    weight: Object.keys(manamiRecords[i]).length,
   }));
   const { matches, stats } = matchManamiToBangumi(matchInputs, subjects);
   for (const [i, bangumiId] of matches) {
