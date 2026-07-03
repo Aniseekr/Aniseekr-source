@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anitabi-spots-index.schema.json",
+  "title": "Anitabi Spots Index",
+  "description": "Flat global index of individual anitabi.cn pilgrimage scene points (one row per real-world location cut that has both valid coordinates and a scene image), built by enumerating GET /bangumi/{id}/points over every id in anitabi-index.json.",
+  "type": "object",
+  "required": ["generatedAt", "source", "count", "spots"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "format": "uri" },
+    "generatedAt": { "type": "integer", "description": "Unix epoch ms when produced." },
+    "source": { "type": "string", "description": "Build provenance, e.g. 'scripts/build-anitabi-points.ts'." },
+    "count": { "type": "integer", "minimum": 0, "description": "spots.length, for a cheap sanity check." },
+    "spots": {
+      "type": "array",
+      "description": "All scene points with valid geo + image. Not sorted (the client indexes by lat).",
+      "items": { "$ref": "#/$defs/SpotEntry" }
+    }
+  },
+  "$defs": {
+    "SpotEntry": {
+      "type": "object",
+      "required": ["id", "b", "lat", "lng", "n", "c", "img"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "anitabi point id (stable within an anime)." },
+        "b": { "type": "integer", "minimum": 1, "description": "Bangumi subject id." },
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+        "n": { "type": "string", "description": "Original-language name." },
+        "c": { "type": "string", "description": "Chinese name; '' when absent." },
+        "img": { "type": "string", "minLength": 1, "description": "Scene image as anitabi returns it (host-relative path); the client normalizes to an absolute CDN thumbnail on read." }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aniseekr/Aniseekr-source/raw/main/schemas/anitabi-points-top.schema.json",
+  "title": "Anitabi Points Top Snapshot",
+  "description": "Raw GET /bangumi/{id}/points payloads for the top-N anime by pointsLength, so the app can seed complete offline point data for the most-visited anime without per-anime round trips. Keyed by Bangumi subject id (string). Each value is the raw points array, fed unchanged into the app's normalizeRawPoints.",
+  "type": "object",
+  "required": ["generatedAt", "source", "topN", "byBangumiId"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "format": "uri" },
+    "generatedAt": { "type": "integer" },
+    "source": { "type": "string" },
+    "topN": { "type": "integer", "minimum": 0, "description": "Requested cap on the number of anime included." },
+    "byBangumiId": {
+      "type": "object",
+      "description": "Map of Bangumi subject id (as a string key) to that anime's raw /points array. Point objects are passed through as-is; only their presence + shape is contractual.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "object" }
+      }
+    }
+  }
+}

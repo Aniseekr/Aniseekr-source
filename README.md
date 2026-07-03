@@ -42,6 +42,32 @@ Dated snapshots: `anitabi-index-YYYY-WW`. The 8 most recent are retained.
 
 The output's `source` and `fallbackUsed` fields tell consumers which path was taken.
 
+## Anitabi Spots Index + Points Top Snapshot
+
+Point-level companions to the Anitabi Index, built by enumerating
+`GET /bangumi/{id}/points` over every id in the index.
+
+**Stable consumption URLs**:
+
+```
+https://github.com/Aniseekr/Aniseekr-source/releases/download/anitabi-spots-index/anitabi-spots-index.json
+https://github.com/Aniseekr/Aniseekr-source/releases/download/anitabi-points-top/anitabi-points-top.json
+```
+
+- `anitabi-spots-index.json` — flat global index of individual scene points
+  (`{ id, b, lat, lng, n, c, img }`), one row per real-world cut with valid geo
+  and a scene image. Schema: [`schemas/anitabi-spots-index.schema.json`](./schemas/anitabi-spots-index.schema.json).
+- `anitabi-points-top.json` — raw `/points` payloads for the top-100 anime by
+  point count, for offline seeding. Schema: [`schemas/anitabi-points-top.schema.json`](./schemas/anitabi-points-top.schema.json).
+
+Dated snapshots: `anitabi-spots-index-YYYY-WW` / `anitabi-points-top-YYYY-WW`.
+The 8 most recent of each are retained. Built daily at 03:50 UTC (20 min after
+the index) by `build-anitabi-points`.
+
+If `api.anitabi.cn` starts returning HTTP 403 (Cloudflare WAF), the build aborts
+and the workflow fails on purpose — a visible signal that pipeline egress is
+blocked (see the UX-overhaul spec §5).
+
 ## Anitabi Cross-Index
 
 For every L2 anitabi-index entry, the resolved AniList + MyAnimeList ids — built by querying [AniList GraphQL](https://anilist.gitbook.io/anilist-apiv2-docs/) with the Bangumi Japanese title and disambiguating on episode count + first-air year.
