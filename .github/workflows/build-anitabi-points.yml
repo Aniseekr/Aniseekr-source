@@ -1,0 +1,105 @@
+name: Build Anitabi Points
+
+# Builds the point-level artifacts (anitabi-spots-index.json + anitabi-points-top.json)
+# by enumerating GET /bangumi/{id}/points over the anitabi-index. Publishes each
+# artifact via a dated weekly snapshot release + a fixed alias release
+# (--clobber'd every run so the client URLs stay stable). Latest 8 dated
+# snapshots of each are retained.
+#
+# Runs 20 minutes after build-anitabi-index (which the script downloads as its
+# L2 seed), so the index is fresh before the points crawl starts.
+
+on:
+  schedule:
+    - cron: '50 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build anitabi points artifacts
+        env:
+          ANITABI_DELAY_MS: '120'
+        timeout-minutes: 30
+        run: bun scripts/build-anitabi-points.ts
+
+      - name: Verify outputs exist
+        run: |
+          test -s anitabi-spots-index.json
+          test -s anitabi-points-top.json
+          node -e "const s=require('./anitabi-spots-index.json'); console.log('spots:', s.count);"
+          node -e "const t=require('./anitabi-points-top.json'); console.log('topAnime:', Object.keys(t.byBangumiId).length);"
+
+      - name: Publish spots index (weekly + alias)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATED_TAG="anitabi-spots-index-$(date -u +%Y-%V)"
+          ALIAS_TAG="anitabi-spots-index"
+          if ! gh release view "$DATED_TAG" >/dev/null 2>&1; then
+            gh release create "$DATED_TAG" \
+              --title "Anitabi Spots Index ($DATED_TAG)" \
+              --notes "Weekly snapshot of the flat point-level pilgrimage index. Auto-published by build-anitabi-points." \
+              --target main
+          fi
+          gh release upload "$DATED_TAG" anitabi-spots-index.json --clobber
+          if ! gh release view "$ALIAS_TAG" >/dev/null 2>&1; then
+            gh release create "$ALIAS_TAG" \
+              --title "Anitabi Spots Index (latest)" \
+              --notes "Always points to the most recent weekly build. Client URL is stable." \
+              --target main
+          fi
+          gh release upload "$ALIAS_TAG" anitabi-spots-index.json --clobber
+
+      - name: Publish points-top snapshot (weekly + alias)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATED_TAG="anitabi-points-top-$(date -u +%Y-%V)"
+          ALIAS_TAG="anitabi-points-top"
+          if ! gh release view "$DATED_TAG" >/dev/null 2>&1; then
+            gh release create "$DATED_TAG" \
+              --title "Anitabi Points Top ($DATED_TAG)" \
+              --notes "Weekly raw /points snapshot for the top-100 anime by point count. Auto-published by build-anitabi-points." \
+              --target main
+          fi
+          gh release upload "$DATED_TAG" anitabi-points-top.json --clobber
+          if ! gh release view "$ALIAS_TAG" >/dev/null 2>&1; then
+            gh release create "$ALIAS_TAG" \
+              --title "Anitabi Points Top (latest)" \
+              --notes "Always points to the most recent weekly build. Client URL is stable." \
+              --target main
+          fi
+          gh release upload "$ALIAS_TAG" anitabi-points-top.json --clobber
+
+      - name: Prune old weekly releases (keep last 8 of each)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for PREFIX in anitabi-spots-index anitabi-points-top; do
+            mapfile -t OLD < <(
+              gh release list --limit 200 --json tagName --jq '.[].tagName' \
+                | grep -E "^${PREFIX}-[0-9]{4}-[0-9]{2}$" \
+                | sort -r \
+                | tail -n +9
+            )
+            for TAG in "${OLD[@]}"; do
+              echo "Pruning $TAG"
+              gh release delete "$TAG" --yes --cleanup-tag
+            done
+          done
